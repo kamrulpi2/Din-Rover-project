@@ -1,0 +1,564 @@
+#define ENABLE_USER_AUTH
+#define ENABLE_DATABASE
+
+#include <Arduino.h>
+#include <WiFi.h>
+#include <WiFiClientSecure.h>
+
+#include <FirebaseClient.h>
+
+#include <Wire.h>
+#include <Adafruit_Sensor.h>
+#include <Adafruit_BME280.h>
+
+
+//============== WIFI ==================
+
+#define WIFI_SSID "AI"
+#define WIFI_PASSWORD "12345678"
+
+
+//============== FIREBASE ==============
+
+#define Web_API_KEY "AIzaSyBkXpnUZzk2YIrAhNdha9ahYeOSlpPn6k8"
+
+#define DATABASE_URL "https://test1-99d84-default-rtdb.asia-southeast1.firebasedatabase.app/"
+
+#define USER_EMAIL "robot123@gmail.com"
+#define USER_PASS  "123456"
+
+
+
+//============== SENSOR PIN ============
+
+#define MQ2_PIN      34
+#define MQ5_PIN      26
+#define MQ7_PIN      33
+#define MQ8_PIN      32
+#define MQ9_PIN      27
+#define MQ135_PIN    35
+
+
+#define DUST_LED_PIN 4
+#define DUST_VO_PIN  25
+
+
+#define TRIG_PIN 5
+#define ECHO_PIN 18
+
+
+
+//============== BME280 ================
+
+Adafruit_BME280 bme;
+
+bool bmeOK=false;
+
+
+
+//============== FAKE VALUE ============
+
+int mq5_value=60;
+int mq8_value=70;
+int mq9_value=80;
+
+
+int mq5_dir=1;
+int mq8_dir=1;
+int mq9_dir=1;
+
+
+
+
+//============== FIREBASE ==============
+
+UserAuth user_auth(
+Web_API_KEY,
+USER_EMAIL,
+USER_PASS
+);
+
+
+WiFiClientSecure ssl_client;
+
+
+FirebaseApp app;
+
+
+using AsyncClient = AsyncClientClass;
+
+
+AsyncClient aClient(ssl_client);
+
+
+RealtimeDatabase Database;
+
+
+
+
+
+//============== WIFI ==================
+
+void connectWiFi()
+{
+
+WiFi.begin(
+WIFI_SSID,
+WIFI_PASSWORD
+);
+
+
+Serial.print("Connecting WiFi");
+
+
+while(WiFi.status()!=WL_CONNECTED)
+{
+
+delay(500);
+Serial.print(".");
+
+}
+
+
+Serial.println();
+
+Serial.println("WiFi Connected");
+
+Serial.println(WiFi.localIP());
+
+}
+
+
+
+
+
+
+
+//============== UPLOAD ================
+
+void uploadData()
+{
+
+
+//---------- REAL MQ -------------
+
+int mq2 =
+map(analogRead(MQ2_PIN),0,4095,0,100);
+
+
+int mq7 =
+map(analogRead(MQ7_PIN),0,4095,0,100);
+
+
+int mq135 =
+map(analogRead(MQ135_PIN),0,4095,0,100);
+
+
+
+
+//---------- FAKE MQ LOOP --------
+
+
+mq5_value += mq5_dir;
+
+mq8_value += mq8_dir;
+
+mq9_value += mq9_dir;
+
+
+
+if(mq5_value>=90)
+mq5_dir=-1;
+
+if(mq5_value<=60)
+mq5_dir=1;
+
+
+
+if(mq8_value>=90)
+mq8_dir=-1;
+
+if(mq8_value<=60)
+mq8_dir=1;
+
+
+
+if(mq9_value>=90)
+mq9_dir=-1;
+
+if(mq9_value<=60)
+mq9_dir=1;
+
+
+
+int mq5=mq5_value;
+
+int mq8=mq8_value;
+
+int mq9=mq9_value;
+
+
+
+
+
+//---------- DUST -------------
+
+digitalWrite(DUST_LED_PIN,LOW);
+
+delayMicroseconds(280);
+
+
+int dustRaw=
+analogRead(DUST_VO_PIN);
+
+
+delayMicroseconds(40);
+
+
+digitalWrite(DUST_LED_PIN,HIGH);
+
+
+
+float voltage=
+dustRaw*(3.3/4095.0);
+
+
+
+float dust=
+(voltage-0.1)/0.005;
+
+
+if(dust<0)
+dust=0;
+
+
+
+
+
+//---------- BME -------------
+
+float temperature=0;
+
+float humidity=0;
+
+float pressure=0;
+
+
+
+if(bmeOK)
+{
+
+temperature=bme.readTemperature();
+
+humidity=bme.readHumidity();
+
+pressure=bme.readPressure()/100.0;
+
+}
+
+
+
+
+
+//---------- ULTRASONIC ----------
+
+
+digitalWrite(TRIG_PIN,LOW);
+
+delayMicroseconds(2);
+
+
+digitalWrite(TRIG_PIN,HIGH);
+
+delayMicroseconds(10);
+
+
+digitalWrite(TRIG_PIN,LOW);
+
+
+
+long duration=
+pulseIn(
+ECHO_PIN,
+HIGH,
+30000
+);
+
+
+
+float distance=-1;
+
+
+
+if(duration>0)
+
+distance=duration*0.034/2;
+
+
+
+
+
+
+//========== SERIAL ==============
+
+
+Serial.println("======================");
+
+
+Serial.print("MQ2 : ");
+Serial.println(mq2);
+
+
+Serial.print("MQ5 : ");
+Serial.println(mq5);
+
+
+Serial.print("MQ7 : ");
+Serial.println(mq7);
+
+
+Serial.print("MQ8 : ");
+Serial.println(mq8);
+
+
+Serial.print("MQ9 : ");
+Serial.println(mq9);
+
+
+Serial.print("MQ135 : ");
+Serial.println(mq135);
+
+
+Serial.print("Dust : ");
+Serial.println(dust);
+
+
+Serial.print("Temp : ");
+Serial.println(temperature);
+
+
+Serial.print("Humidity : ");
+Serial.println(humidity);
+
+
+Serial.print("Pressure : ");
+Serial.println(pressure);
+
+
+Serial.print("Distance : ");
+Serial.println(distance);
+
+
+
+
+
+//========== FIREBASE =============
+
+
+Database.set<int>(
+aClient,
+"/SensorData/MQ2",
+mq2
+);
+
+
+Database.set<int>(
+aClient,
+"/SensorData/MQ5",
+mq5
+);
+
+
+Database.set<int>(
+aClient,
+"/SensorData/MQ7",
+mq7
+);
+
+
+Database.set<int>(
+aClient,
+"/SensorData/MQ8",
+mq8
+);
+
+
+Database.set<int>(
+aClient,
+"/SensorData/MQ9",
+mq9
+);
+
+
+Database.set<int>(
+aClient,
+"/SensorData/MQ135",
+mq135
+);
+
+
+
+Database.set<float>(
+aClient,
+"/SensorData/Dust",
+dust
+);
+
+
+
+Database.set<float>(
+aClient,
+"/SensorData/Temperature",
+temperature
+);
+
+
+
+Database.set<float>(
+aClient,
+"/SensorData/Humidity",
+humidity
+);
+
+
+
+Database.set<float>(
+aClient,
+"/SensorData/Pressure",
+pressure
+);
+
+
+
+Database.set<float>(
+aClient,
+"/SensorData/Distance",
+distance
+);
+
+
+
+Serial.println("Firebase Updated");
+
+}
+
+
+
+
+
+
+
+
+//============== SETUP ==================
+
+void setup()
+{
+
+Serial.begin(115200);
+
+
+
+pinMode(DUST_LED_PIN,OUTPUT);
+
+digitalWrite(DUST_LED_PIN,HIGH);
+
+
+
+pinMode(TRIG_PIN,OUTPUT);
+
+pinMode(ECHO_PIN,INPUT);
+
+
+
+Wire.begin(21,22);
+
+
+
+
+if(
+bme.begin(0x76)
+||
+bme.begin(0x77)
+)
+{
+
+bmeOK=true;
+
+Serial.println("BME280 OK");
+
+}
+else
+{
+
+Serial.println("BME280 NOT FOUND");
+
+}
+
+
+
+
+
+connectWiFi();
+
+
+
+
+ssl_client.setInsecure();
+
+
+
+
+initializeApp(
+aClient,
+app,
+getAuth(user_auth)
+);
+
+
+
+app.getApp<RealtimeDatabase>(
+Database
+);
+
+
+
+Database.url(
+DATABASE_URL
+);
+
+
+
+Serial.println("Firebase Ready");
+
+}
+
+
+
+
+
+//============== LOOP ===================
+
+void loop()
+{
+
+
+app.loop();
+
+
+
+static unsigned long timer=0;
+
+
+
+if(millis()-timer>5000)
+
+{
+
+timer=millis();
+
+uploadData();
+
+}
+
+
+}
