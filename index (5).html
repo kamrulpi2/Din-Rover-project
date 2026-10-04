@@ -1,0 +1,870 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Smart Monitor Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+:root{
+  --ink:#0f2a24; --ink2:#173a32; --leaf:#2e9e6b; --leaf-soft:#e3f4ec;
+  --bg:#eef2ef; --card:#ffffff; --line:#dbe3de; --muted:#5f736b;
+  --amber:#e8962a; --water:#2b7fd8; --red:#d64545;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Manrope',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink);min-height:100vh}
+button{font-family:inherit;cursor:pointer}
+button:focus-visible,input:focus-visible{outline:3px solid var(--amber);outline-offset:2px}
+
+/* layout */
+.app{display:grid;grid-template-columns:240px 1fr;min-height:100vh}
+.side{background:var(--ink);color:#d7e6df;padding:24px 16px;display:flex;flex-direction:column;gap:28px;position:sticky;top:0;height:100vh}
+.brand{display:flex;align-items:center;gap:12px;padding:0 8px}
+.brand .logo{width:42px;height:42px;border-radius:12px;background:var(--leaf);display:grid;place-items:center;color:#fff;font-size:20px}
+.brand b{font-size:17px;display:block;color:#fff}
+.brand small{color:#8fb3a5;font-size:12px}
+.nav{display:flex;flex-direction:column;gap:6px}
+.nav button{display:flex;align-items:center;gap:12px;background:none;border:0;color:#b9d0c6;padding:12px 14px;border-radius:10px;font-size:15px;font-weight:600;text-align:left;transition:.15s}
+.nav button i{width:20px;text-align:center}
+.nav button:hover{background:var(--ink2);color:#fff}
+.nav button.active{background:var(--leaf);color:#fff}
+.side-foot{margin-top:auto;font-size:12px;color:#8fb3a5;padding:0 8px;line-height:1.5}
+
+.main{padding:28px 32px 48px;max-width:1200px;width:100%}
+.top{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:26px}
+.top h1{font-size:26px;font-weight:800}
+.top p{color:var(--muted);font-size:14px;margin-top:4px}
+.status{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);padding:10px 16px;border-radius:999px;font-size:13px;font-weight:700}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--muted)}
+.status.on .dot{background:var(--leaf);box-shadow:0 0 0 0 rgba(46,158,107,.6);animation:pulse 1.8s infinite}
+.status.off .dot{background:var(--red)}
+@keyframes pulse{70%{box-shadow:0 0 0 9px rgba(46,158,107,0)}100%{box-shadow:0 0 0 0 rgba(46,158,107,0)}}
+
+.section-title{font-size:15px;font-weight:800;margin:30px 0 14px;display:flex;align-items:center;gap:10px}
+.section-title i{color:var(--leaf)}
+.grid{display:grid;gap:16px}
+.g-sensors{grid-template-columns:repeat(auto-fill,minmax(210px,1fr))}
+.g-gauge{grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}
+.g-servo{grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
+.g-team{grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}
+
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px}
+.ico{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;font-size:19px;background:var(--leaf-soft);color:var(--leaf)}
+.card .label{font-size:13px;color:var(--muted);font-weight:600;margin-top:14px}
+.card .value{font-size:26px;font-weight:800;margin-top:2px}
+.ir-top{display:flex;justify-content:space-between;align-items:flex-start}
+.badge{font-size:12px;font-weight:700;padding:5px 10px;border-radius:999px;background:#eef1ef;color:var(--muted)}
+.badge.hit{background:#fdecd2;color:#a56210}
+.ir.hit .ico{background:#fdecd2;color:var(--amber)}
+
+/* gauges */
+.gauge-head{display:flex;justify-content:space-between;align-items:center}
+.gauge-head .t{display:flex;align-items:center;gap:14px}
+.gauge-head h3{font-size:16px}
+.gauge-head small{color:var(--muted);font-size:13px}
+.big{font-size:34px;font-weight:800}
+.bar{height:12px;border-radius:99px;background:#e8eeea;margin-top:18px;overflow:hidden}
+.bar span{display:block;height:100%;width:0;border-radius:99px;transition:width .6s ease}
+.soil .bar span{background:linear-gradient(90deg,#c58a3f,#2e9e6b)}
+.soil .ico{background:#f6ead8;color:#a8702a}
+.water .bar span{background:var(--water)}
+.water .ico{background:#dcebfb;color:var(--water)}
+
+/* info strip, alerts, map */
+.info{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px}
+.info .lbl{font-size:13px;color:var(--muted);font-weight:600;display:flex;gap:8px;align-items:center}
+.info .lbl i{color:var(--leaf)}
+.info .big{font-size:28px;font-weight:800;margin-top:6px}
+.info .sub{font-size:13px;color:var(--muted);margin-top:3px}
+.alert{background:#fbe6e6;border-left:4px solid var(--red);padding:10px 14px;border-radius:8px;font-size:14px;font-weight:600;margin-top:10px;display:flex;gap:10px;align-items:center}
+.alert i{color:var(--red)}
+#map{height:380px;border-radius:12px;z-index:0;background:#e8eeea}
+.legend{font-size:13px;color:var(--muted);margin-top:10px;line-height:1.6}
+
+/* live data + log */
+.lcards{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px}
+.lcard .k{font-size:13px;color:var(--muted);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lcard .v{font-size:28px;font-weight:800;margin:2px 0}
+.lcard .v small{font-size:13px;color:var(--muted);margin-left:4px;font-weight:700}
+.lcard .v.on{color:var(--leaf)}.lcard .v.off{color:var(--red)}
+.lcard canvas{width:100%;height:34px;display:block;margin-top:6px}
+.lcard .mm{font-size:11px;color:var(--muted)}
+.lcard .bar{margin-top:6px;height:6px}
+.inp{padding:10px 13px;border:1px solid var(--line);border-radius:10px;font:inherit;font-size:14px;min-width:200px;background:#fafcfb}
+.pathbox{display:flex;gap:8px;flex-wrap:wrap}
+.tw{max-height:260px;overflow:auto;margin-top:12px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+th{position:sticky;top:0;background:#f4f7f5;color:var(--muted)}
+
+/* rover drive */
+.pad{display:grid;grid-template-columns:repeat(3,68px);gap:8px;justify-content:center;margin:8px 0 18px}
+.pad button{height:60px;border:1px solid var(--line);border-radius:12px;background:#f4f7f5;font-size:20px;color:var(--ink)}
+.pad button:active{background:var(--leaf);color:#fff}
+.pad .stop{background:var(--red);color:#fff;border-color:var(--red)}
+.row{display:flex;align-items:center;gap:10px;font-size:14px;margin:8px 0;font-weight:600}
+.row input[type=range]{flex:1;accent-color:#2e9e6b}
+.toggles{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.toggles .btn.active{background:var(--leaf);color:#fff}
+
+/* sensor value cards */
+.g-sensors .sensor .value{font-size:24px}
+.unit{font-size:13px;font-weight:700;color:var(--muted)}
+.sensor .bar{margin-top:12px;height:8px}
+.sensor .bar span{background:var(--leaf)}
+.sensor .sub{font-size:12px;color:var(--muted);margin-top:2px}
+.sensor canvas{width:100%;height:30px;display:block;margin-top:12px}
+.sensor .mm{font-size:11px;color:var(--muted);margin-top:2px}
+.badge.ok{background:var(--leaf-soft);color:#1f7a50}
+.badge.warn{background:#fdecd2;color:#a56210}
+.badge.bad{background:#fbe6e6;color:var(--red)}
+.gas .ico{background:#fdecd2;color:var(--amber)}
+.env .ico{background:#dcebfb;color:var(--water)}
+.other .ico{background:#eae4f7;color:#7a52c9}
+
+/* servo */
+.servo-top{display:flex;justify-content:space-between;align-items:center}
+.servo-top h3{font-size:16px}
+.servo-top small{display:block;color:var(--muted);font-size:13px;margin-top:3px}
+.servo-btn{margin-top:18px;width:100%;border:0;border-radius:12px;padding:16px;font-size:16px;font-weight:800;color:#fff;background:#8a9a93;display:flex;justify-content:center;align-items:center;gap:10px;transition:.2s}
+.servo-btn.on{background:var(--leaf)}
+.servo-btn:active{transform:scale(.98)}
+.servo-btn:disabled{opacity:.6;cursor:wait}
+.dial{margin-top:16px;display:flex;align-items:center;gap:12px;color:var(--muted);font-size:13px;font-weight:600}
+.dial .track{flex:1;height:8px;border-radius:99px;background:#e8eeea;position:relative;overflow:hidden}
+.dial .track span{position:absolute;left:0;top:0;bottom:0;background:var(--ink);border-radius:99px;width:0;transition:width 1.2s ease}
+
+/* team */
+.team-bar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.btn{border:0;border-radius:10px;padding:11px 18px;font-weight:700;font-size:14px;display:inline-flex;align-items:center;gap:8px;transition:.15s}
+.btn.primary{background:var(--leaf);color:#fff}
+.btn.primary:hover{background:#268a5c}
+.btn.ghost{background:#eef1ef;color:var(--ink)}
+.btn.ghost:hover{background:#e0e6e2}
+.member{display:flex;flex-direction:column;gap:12px}
+.m-head{display:flex;align-items:center;gap:14px}
+.avatar{width:54px;height:54px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:19px;color:#fff;flex-shrink:0;overflow:hidden}
+.avatar img{width:100%;height:100%;object-fit:cover}
+.m-head h3{font-size:16px}
+.m-head small{color:var(--muted);font-size:13px}
+.part{background:var(--leaf-soft);color:#1f7a50;border-radius:10px;padding:10px 12px;font-size:13px;font-weight:700;display:flex;gap:8px;align-items:center}
+.contact{font-size:13px;color:var(--muted);display:flex;flex-direction:column;gap:6px}
+.contact i{width:18px;color:var(--leaf)}
+.m-actions{display:flex;gap:8px;margin-top:auto}
+.m-actions .btn{flex:1;justify-content:center;padding:9px}
+.btn.del{background:#fbe6e6;color:var(--red)}
+.btn.del:hover{background:#f6d3d3}
+.empty{grid-column:1/-1;text-align:center;padding:40px 20px;color:var(--muted);border:2px dashed var(--line);border-radius:16px}
+.empty i{font-size:30px;color:var(--leaf);margin-bottom:10px;display:block}
+
+/* modal */
+.overlay{position:fixed;inset:0;background:rgba(15,42,36,.55);display:none;align-items:center;justify-content:center;padding:16px;z-index:50}
+.overlay.show{display:flex}
+.modal{background:#fff;border-radius:18px;width:100%;max-width:460px;padding:26px;max-height:92vh;overflow:auto}
+.modal h2{font-size:20px;margin-bottom:18px}
+.field{margin-bottom:14px}
+.field label{display:block;font-size:13px;font-weight:700;margin-bottom:6px}
+.field input{width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:10px;font:inherit;font-size:14px;background:#fafcfb}
+.field input:focus{border-color:var(--leaf);outline:none}
+.modal .row{display:flex;gap:10px;justify-content:flex-end;margin-top:20px}
+
+/* toast */
+.toast{position:fixed;bottom:24px;left:50%;transform:translate(-50%,30px);background:var(--ink);color:#fff;padding:12px 20px;border-radius:12px;font-size:14px;font-weight:600;opacity:0;pointer-events:none;transition:.3s;z-index:99;display:flex;gap:10px;align-items:center}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+
+.tab{display:none}.tab.active{display:block}
+
+@media(max-width:860px){
+  .app{grid-template-columns:1fr}
+  .side{position:static;height:auto;flex-direction:row;align-items:center;padding:12px 14px;gap:10px;overflow-x:auto}
+  .brand small,.side-foot{display:none}
+  .brand b{font-size:15px}
+  .nav{flex-direction:row}
+  .nav button{padding:10px 12px;font-size:13px}
+  .nav button span{display:none}
+  .main{padding:20px 16px 40px}
+}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <aside class="side">
+    <div class="brand">
+      <div class="logo"><i class="fa-solid fa-seedling"></i></div>
+      <div><b>Smart Monitor</b><small>ESP32 + Firebase</small></div>
+    </div>
+    <nav class="nav">
+      <button class="active" data-tab="dash"><i class="fa-solid fa-gauge-high"></i><span>Dashboard</span></button>
+      <button data-tab="live"><i class="fa-solid fa-wave-square"></i><span>Live data</span></button>
+      <button data-tab="control"><i class="fa-solid fa-gears"></i><span>Controls</span></button>
+      <button data-tab="team"><i class="fa-solid fa-people-group"></i><span>Team</span></button>
+    </nav>
+    <div class="side-foot">Live updates from Firebase.</div>
+  </aside>
+
+  <main class="main">
+    <div class="top">
+      <div>
+        <h1 id="pageTitle">Dashboard</h1>
+        <p id="lastUpdate">Waiting for data…</p>
+      </div>
+      <div class="status" id="status"><span class="dot"></span><span id="statusText">Connecting</span></div>
+    </div>
+
+    <!-- DASHBOARD -->
+    <section class="tab active" id="tab-dash">
+      <div class="info">
+        <div class="card"><div class="lbl"><i class="fa-regular fa-clock"></i> Local time</div><div class="big" id="clock">--:--:--</div><div class="sub" id="dateTxt">--</div></div>
+        <div class="card"><div class="lbl"><i class="fa-solid fa-location-dot"></i> Live location</div><div class="big" id="placeTxt" style="font-size:20px">Locating…</div><div class="sub" id="coordTxt">--</div></div>
+        <div class="card"><div class="lbl"><i class="fa-solid fa-cloud-sun-rain"></i> Weather</div><div class="big" id="wTemp">--</div><div class="sub" id="wDesc">Waiting for location</div><div class="sub" id="wMore"></div></div>
+      </div>
+      <div id="alerts"></div>
+      <div class="section-title"><i class="fa-solid fa-eye"></i> IR sensors</div>
+      <div class="grid g-sensors">
+        <div class="card ir" id="ir1"><div class="ir-top"><div class="ico"><i class="fa-solid fa-satellite-dish"></i></div><span class="badge" id="ir1b">No data</span></div><div class="label">IR sensor 1</div><div class="value" id="ir1v">--</div></div>
+        <div class="card ir" id="ir2"><div class="ir-top"><div class="ico"><i class="fa-solid fa-satellite-dish"></i></div><span class="badge" id="ir2b">No data</span></div><div class="label">IR sensor 2</div><div class="value" id="ir2v">--</div></div>
+        <div class="card ir" id="ir3"><div class="ir-top"><div class="ico"><i class="fa-solid fa-satellite-dish"></i></div><span class="badge" id="ir3b">No data</span></div><div class="label">IR sensor 3</div><div class="value" id="ir3v">--</div></div>
+      </div>
+
+      <div class="section-title"><i class="fa-solid fa-droplet"></i> Soil and water</div>
+      <div class="grid g-gauge">
+        <div class="card soil">
+          <div class="gauge-head"><div class="t"><div class="ico"><i class="fa-solid fa-leaf"></i></div><div><h3>Soil moisture</h3><small id="soilTxt">No data</small></div></div><div class="big" id="soilV">--</div></div>
+          <div class="bar"><span id="soilBar"></span></div>
+        </div>
+        <div class="card water">
+          <div class="gauge-head"><div class="t"><div class="ico"><i class="fa-solid fa-water"></i></div><div><h3>Water level</h3><small id="waterTxt">No data</small></div></div><div class="big" id="waterV">--</div></div>
+          <div class="bar"><span id="waterBar"></span></div>
+        </div>
+      </div>
+
+      <div class="section-title"><i class="fa-solid fa-wind"></i> Gas sensors</div>
+      <div class="grid g-sensors" id="gasGrid"></div>
+
+      <div class="section-title"><i class="fa-solid fa-cloud-sun"></i> Air and environment</div>
+      <div class="grid g-sensors" id="envGrid"></div>
+
+      <div id="otherWrap" style="display:none">
+        <div class="section-title"><i class="fa-solid fa-microchip"></i> Other data</div>
+        <div class="grid g-sensors" id="otherGrid"></div>
+      </div>
+
+      <div class="section-title"><i class="fa-solid fa-map-location-dot"></i> Bangladesh map</div>
+      <div class="card">
+        <div id="map"></div>
+        <div class="legend"><i class="fa-solid fa-circle" style="color:#4da3ff"></i> You &nbsp;&nbsp; <i class="fa-solid fa-circle" style="color:#e8962a"></i> Rover GPS. The rover shows when the database has lat and lng values.</div>
+      </div>
+    </section>
+
+    <!-- LIVE DATA -->
+    <section class="tab" id="tab-live">
+      <div class="team-bar">
+        <div class="section-title" style="margin:0"><i class="fa-solid fa-chart-line"></i> Live parameters</div>
+        <div class="pathbox"><input class="inp" id="pathIn" value="SensorData" aria-label="Database path to watch"><button class="btn primary" id="pathBtn"><i class="fa-solid fa-eye"></i> Watch path</button></div>
+      </div>
+      <div class="lcards" id="lcards" style="margin-top:16px"><div class="empty">Waiting for data from Firebase…</div></div>
+      <div class="card" style="margin-top:24px">
+        <div class="team-bar">
+          <div class="section-title" style="margin:0"><i class="fa-solid fa-table-list"></i> Data log (last 50 updates)</div>
+          <div style="display:flex;gap:8px"><button class="btn ghost" id="csvBtn"><i class="fa-solid fa-download"></i> Download CSV</button><button class="btn ghost" id="clrBtn"><i class="fa-solid fa-trash-can"></i> Clear</button></div>
+        </div>
+        <div class="tw"><table><thead id="logHead"></thead><tbody id="logBody"></tbody></table></div>
+      </div>
+    </section>
+
+    <!-- CONTROL -->
+    <section class="tab" id="tab-control">
+      <div class="section-title"><i class="fa-solid fa-sliders"></i> Servo buttons</div>
+      <div class="grid g-servo">
+        <div class="card">
+          <div class="servo-top"><div><h3>Servo 1</h3><small>ON: 0° → 180° &nbsp; OFF: 180° → 0°</small></div><div class="ico"><i class="fa-solid fa-gear"></i></div></div>
+          <button class="servo-btn" id="s1btn"><i class="fa-solid fa-power-off"></i><span>Loading…</span></button>
+          <div class="dial"><span>0°</span><div class="track"><span id="s1track"></span></div><span>180°</span></div>
+        </div>
+        <div class="card">
+          <div class="servo-top"><div><h3>Servo 2</h3><small>ON: 0° → 360° &nbsp; OFF: 360° → 0°</small></div><div class="ico"><i class="fa-solid fa-rotate"></i></div></div>
+          <button class="servo-btn" id="s2btn"><i class="fa-solid fa-power-off"></i><span>Loading…</span></button>
+          <div class="dial"><span>0°</span><div class="track"><span id="s2track"></span></div><span>360°</span></div>
+        </div>
+      </div>
+
+      <div class="section-title"><i class="fa-solid fa-car-side"></i> Rover drive control</div>
+      <div class="card" style="max-width:420px">
+        <div class="pad">
+          <span></span><button data-cmd="forward" aria-label="Forward"><i class="fa-solid fa-arrow-up"></i></button><span></span>
+          <button data-cmd="left" aria-label="Left"><i class="fa-solid fa-arrow-left"></i></button>
+          <button data-cmd="stop" class="stop" aria-label="Stop"><i class="fa-solid fa-stop"></i></button>
+          <button data-cmd="right" aria-label="Right"><i class="fa-solid fa-arrow-right"></i></button>
+          <span></span><button data-cmd="backward" aria-label="Backward"><i class="fa-solid fa-arrow-down"></i></button><span></span>
+        </div>
+        <div class="row"><label for="spd">Speed</label><input type="range" id="spd" min="0" max="255" value="150"><b id="spdVal">150</b></div>
+        <div class="toggles">
+          <button class="btn ghost" id="autoBtn"><i class="fa-solid fa-robot"></i> <span>Auto mode: off</span></button>
+          <button class="btn ghost" id="lightBtn"><i class="fa-solid fa-lightbulb"></i> <span>Light: off</span></button>
+        </div>
+        <div class="legend">Hold a button or use arrow keys / WASD. Commands are written to <code>/control</code>.</div>
+      </div>
+    </section>
+
+    <!-- TEAM -->
+    <section class="tab" id="tab-team">
+      <div class="team-bar">
+        <div class="section-title" style="margin:0"><i class="fa-solid fa-users"></i> Team members and parts</div>
+        <button class="btn primary" id="addMember"><i class="fa-solid fa-user-plus"></i> Add member</button>
+      </div>
+      <div class="grid g-team" id="teamGrid" style="margin-top:16px"></div>
+    </section>
+  </main>
+</div>
+
+<!-- member modal -->
+<div class="overlay" id="overlay">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="mTitle">
+    <h2 id="mTitle">Add member</h2>
+    <div class="field"><label for="fName">Full name</label><input id="fName" placeholder="e.g. Rahim Uddin"></div>
+    <div class="field"><label for="fRole">Role</label><input id="fRole" placeholder="e.g. Hardware engineer"></div>
+    <div class="field"><label for="fPart">Project part</label><input id="fPart" placeholder="e.g. Sensors and wiring"></div>
+    <div class="field"><label for="fPhone">Phone</label><input id="fPhone" placeholder="e.g. 01700000000"></div>
+    <div class="field"><label for="fEmail">Email</label><input id="fEmail" type="email" placeholder="e.g. name@gmail.com"></div>
+    <div class="field"><label for="fPhoto">Photo link (optional)</label><input id="fPhoto" placeholder="https://…"></div>
+    <div class="row">
+      <button class="btn ghost" id="mCancel">Cancel</button>
+      <button class="btn primary" id="mSave"><i class="fa-solid fa-floppy-disk"></i> Save member</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"><i class="fa-solid fa-circle-check"></i><span id="toastText"></span></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getAnalytics, isSupported } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-analytics.js";
+import { getDatabase, ref, onValue, set, update, remove, push } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+// Your web app's Firebase configuration
+const firebaseConfig = {
+  apiKey: "AIzaSyBkXpnUZzk2YIrAhNdha9ahYeOSlpPn6k8",
+  authDomain: "test1-99d84.firebaseapp.com",
+  databaseURL: "https://test1-99d84-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "test1-99d84",
+  storageBucket: "test1-99d84.firebasestorage.app",
+  messagingSenderId: "860338345519",
+  appId: "1:860338345519:web:9dc8580f0fb782b91c18da",
+  measurementId: "G-5HVP83S6YH"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+// Analytics only works on http/https pages, so it is skipped safely when not supported
+isSupported().then(function(ok){ if(ok){ getAnalytics(app); } }).catch(function(){});
+
+(function(){
+'use strict';
+
+/* ---------- helpers ---------- */
+function $(id){return document.getElementById(id);}
+function esc(s){var d=document.createElement('div');d.textContent=(s==null?'':String(s));return d.innerHTML;}
+function toast(msg){
+  $('toastText').textContent = msg;
+  var t = $('toast'); t.classList.add('show');
+  clearTimeout(toast._t); toast._t = setTimeout(function(){t.classList.remove('show');},2200);
+}
+// Same call style as before, now using the Firebase SDK
+function dbReq(method, path, body){
+  var r = ref(db, path.replace(/^\/+/, ''));
+  if(method === 'PUT') return set(r, body).then(function(){ return body; });
+  if(method === 'PATCH') return update(r, body).then(function(){ return body; });
+  if(method === 'DELETE') return remove(r).then(function(){ return null; });
+  if(method === 'POST'){ var n = push(r); return set(n, body).then(function(){ return {name: n.key}; }); }
+  return Promise.reject(new Error('Unknown method'));
+}
+
+/* ---------- tabs ---------- */
+var titles = {dash:'Dashboard', live:'Live data', control:'Controls', team:'Team'};
+document.querySelectorAll('.nav button').forEach(function(b){
+  b.addEventListener('click', function(){
+    document.querySelectorAll('.nav button').forEach(function(x){x.classList.remove('active');});
+    document.querySelectorAll('.tab').forEach(function(x){x.classList.remove('active');});
+    b.classList.add('active');
+    $('tab-' + b.dataset.tab).classList.add('active');
+    $('pageTitle').textContent = titles[b.dataset.tab];
+    onTab(b.dataset.tab);
+  });
+});
+
+/* ---------- connection status ---------- */
+function setStatus(ok){
+  var s = $('status');
+  s.className = 'status ' + (ok ? 'on' : 'off');
+  $('statusText').textContent = ok ? 'Firebase connected' : 'Connection lost';
+}
+
+/* ---------- sensors ---------- */
+function setIR(n, v){
+  var el = $('ir'+n), hit = (Number(v) === 1);
+  if(v === undefined || v === null){
+    $('ir'+n+'v').textContent = '--'; $('ir'+n+'b').textContent = 'No data'; el.classList.remove('hit'); return;
+  }
+  el.classList.toggle('hit', hit);
+  $('ir'+n+'v').textContent = hit ? 'Detected' : 'Clear';
+  $('ir'+n+'b').textContent = hit ? 'Object near' : 'Nothing';
+  $('ir'+n+'b').className = 'badge' + (hit ? ' hit' : '');
+}
+function setGauge(id, v, words){
+  if(v === undefined || v === null){ $(id+'V').textContent='--'; $(id+'Bar').style.width='0'; $(id+'Txt').textContent='No data'; return; }
+  v = Math.max(0, Math.min(100, Number(v)));
+  $(id+'V').textContent = Math.round(v) + '%';
+  $(id+'Bar').style.width = v + '%';
+  $(id+'Txt').textContent = v < 33 ? words[0] : (v < 66 ? words[1] : words[2]);
+}
+
+/* ---------- all sensor data (every key in /SensorData) ---------- */
+var GAS = [
+  ['MQ2','MQ-2','Smoke, LPG, methane','fa-fire-flame-simple'],
+  ['MQ5','MQ-5','LPG, natural gas','fa-fire'],
+  ['MQ7','MQ-7','Carbon monoxide','fa-skull-crossbones'],
+  ['MQ8','MQ-8','Hydrogen','fa-atom'],
+  ['MQ9','MQ-9','CO, flammable gas','fa-burst'],
+  ['MQ135','MQ-135','Air quality (NH3, CO2, benzene)','fa-lungs']
+];
+var ENV = [
+  ['Temperature','Temperature','BME280 sensor','fa-temperature-half','°C',1],
+  ['Humidity','Humidity','BME280 sensor','fa-droplet','%',1],
+  ['Pressure','Pressure','BME280 sensor','fa-gauge','hPa',1],
+  ['Dust','Dust','Dust sensor','fa-smog','µg/m³',0],
+  ['Distance','Distance','Ultrasonic sensor','fa-ruler-horizontal','cm',0]
+];
+var USED = ['IR1','IR2','IR3','Soil','Water','SoilMoisture','WaterLevel'];
+var lastSensorJson = '', sHist = {};
+
+function toNum(v){ return (v === undefined || v === null || v === '' || isNaN(Number(v))) ? null : Number(v); }
+function barColor(p){ return p >= 70 ? 'var(--red)' : (p >= 40 ? 'var(--amber)' : 'var(--leaf)'); }
+function sensorCard(cls, key, icon, label, sub, text, unit, pct, badge){
+  var h = sHist[key] || [];
+  return '<div class="card sensor '+cls+'"><div class="ir-top"><div class="ico"><i class="fa-solid '+icon+'"></i></div>' +
+    (badge ? '<span class="badge '+badge[1]+'">'+esc(badge[0])+'</span>' : '') + '</div>' +
+    '<div class="label">'+esc(label)+'</div>' +
+    '<div class="value">'+esc(text)+(unit ? '<span class="unit"> '+esc(unit)+'</span>' : '')+'</div>' +
+    (sub ? '<div class="sub">'+esc(sub)+'</div>' : '') +
+    (pct === null ? '' : '<div class="bar"><span style="width:'+pct+'%;background:'+barColor(pct)+'"></span></div>') +
+    (h.length ? '<canvas data-k="'+esc(key)+'" width="300" height="60"></canvas><div class="mm">min '+fmt(Math.min.apply(null,h))+'  max '+fmt(Math.max.apply(null,h))+'</div>' : '') +
+  '</div>';
+}
+function renderSensors(s){
+  var sj = JSON.stringify(s);
+  if(sj === lastSensorJson) return;
+  lastSensorJson = sj;
+
+  GAS.concat(ENV).forEach(function(g){
+    var n = toNum(s[g[0]]);
+    if(n !== null){ var a = sHist[g[0]] = sHist[g[0]] || []; a.push(n); if(a.length > 40) a.shift(); }
+  });
+  var bmeOff = toNum(s.Temperature) === 0 && toNum(s.Humidity) === 0 && toNum(s.Pressure) === 0;
+
+  $('gasGrid').innerHTML = GAS.map(function(g){
+    var n = toNum(s[g[0]]), badge = null;
+    if(n !== null) badge = n < 40 ? ['Low level','ok'] : (n < 70 ? ['Medium level','warn'] : ['High level','bad']);
+    return sensorCard('gas', g[0], g[3], g[1], g[2], n === null ? '--' : String(Math.round(n)), n === null ? '' : '%', n === null ? null : Math.max(0, Math.min(100, n)), badge);
+  }).join('');
+
+  $('envGrid').innerHTML = ENV.map(function(e){
+    var n = toNum(s[e[0]]), text, unit = e[4], badge = null;
+    if(n === null){ text = '--'; unit = ''; }
+    else if(e[0] === 'Distance' && n < 0){ text = 'Out of range'; unit = ''; badge = ['No echo','warn']; }
+    else { text = String(Math.round(n * 10) / 10); }
+    if(e[5] && bmeOff) badge = ['Sensor not found','warn'];
+    return sensorCard('env', e[0], e[3], e[1], e[2], text, unit, null, badge);
+  }).join('');
+
+  var known = {};
+  GAS.concat(ENV).forEach(function(g){ known[g[0]] = 1; });
+  USED.forEach(function(k){ known[k] = 1; });
+  var extra = Object.keys(s).filter(function(k){ return !known[k]; });
+  $('otherWrap').style.display = extra.length ? 'block' : 'none';
+  $('otherGrid').innerHTML = extra.map(function(k){
+    var v = s[k];
+    return sensorCard('other', k, 'fa-microchip', k, '', (typeof v === 'object') ? JSON.stringify(v) : String(v), '', null, null);
+  }).join('');
+
+  document.querySelectorAll('canvas[data-k]').forEach(function(cv){ drawSpark(cv, sHist[cv.getAttribute('data-k')] || []); });
+}
+
+/* ---------- servo buttons ---------- */
+var servo = {1:{val:0,lock:0}, 2:{val:0,lock:0}};
+var maxDeg = {1:180, 2:360};
+
+function drawServo(n){
+  var on = servo[n].val === 1;
+  var b = $('s'+n+'btn');
+  b.classList.toggle('on', on);
+  b.querySelector('span').textContent = on ? 'ON — turn back to 0°' : 'OFF — turn to ' + maxDeg[n] + '°';
+  $('s'+n+'track').style.width = (on ? 100 : 0) + '%';
+}
+function toggleServo(n){
+  var b = $('s'+n+'btn'), next = servo[n].val === 1 ? 0 : 1;
+  b.disabled = true;
+  servo[n].val = next; servo[n].lock = Date.now() + 3000;
+  drawServo(n);
+  dbReq('PUT', '/Control/Servo'+n, next)
+    .then(function(){ toast('Servo ' + n + (next ? ' moving 0° → ' + maxDeg[n] + '°' : ' moving ' + maxDeg[n] + '° → 0°')); })
+    .catch(function(){ toast('Could not send command. Check internet.'); })
+    .then(function(){ b.disabled = false; });
+}
+$('s1btn').addEventListener('click', function(){toggleServo(1);});
+$('s2btn').addEventListener('click', function(){toggleServo(2);});
+drawServo(1); drawServo(2);
+
+/* ---------- team ---------- */
+var team = {}, lastTeamJson = '', editId = null;
+var colors = ['#2e9e6b','#2b7fd8','#e8962a','#8a5cd6','#d64545','#1a8f9c','#c0558a'];
+
+function colorFor(s){var h=0;for(var i=0;i<s.length;i++){h=(h*31+s.charCodeAt(i))>>>0;}return colors[h%colors.length];}
+function initials(n){var p=String(n||'?').trim().split(/\s+/);return ((p[0]||'?')[0]+(p[1]?p[1][0]:'')).toUpperCase();}
+function safeUrl(u){return /^https?:\/\//i.test(u||'') ? u : '';}
+
+function renderTeam(){
+  var ids = Object.keys(team), g = $('teamGrid');
+  if(!ids.length){
+    g.innerHTML = '<div class="empty"><i class="fa-solid fa-people-group"></i>No team members yet. Add the first member to get started.</div>';
+    return;
+  }
+  g.innerHTML = ids.map(function(id){
+    var m = team[id] || {}, photo = safeUrl(m.photo);
+    var av = photo ? '<img src="'+esc(photo)+'" alt="" onerror="this.remove()">' : esc(initials(m.name));
+    return '<div class="card member">' +
+      '<div class="m-head"><div class="avatar" style="background:'+colorFor(String(m.name||id))+'">'+av+'</div>' +
+      '<div><h3>'+esc(m.name)+'</h3><small>'+esc(m.role)+'</small></div></div>' +
+      '<div class="part"><i class="fa-solid fa-puzzle-piece"></i>'+esc(m.part || 'No part assigned')+'</div>' +
+      '<div class="contact">' +
+        (m.phone ? '<div><i class="fa-solid fa-phone"></i>'+esc(m.phone)+'</div>' : '') +
+        (m.email ? '<div><i class="fa-solid fa-envelope"></i>'+esc(m.email)+'</div>' : '') +
+      '</div>' +
+      '<div class="m-actions"><button class="btn ghost" data-edit="'+esc(id)+'"><i class="fa-solid fa-pen"></i> Edit</button>' +
+      '<button class="btn del" data-del="'+esc(id)+'"><i class="fa-solid fa-trash"></i> Delete</button></div>' +
+    '</div>';
+  }).join('');
+}
+
+$('teamGrid').addEventListener('click', function(e){
+  var eb = e.target.closest('[data-edit]'), db = e.target.closest('[data-del]');
+  if(eb) openModal(eb.getAttribute('data-edit'));
+  if(db) deleteMember(db.getAttribute('data-del'));
+});
+
+var fields = ['Name','Role','Part','Phone','Email','Photo'];
+function openModal(id){
+  editId = id || null;
+  var m = id ? (team[id] || {}) : {};
+  $('mTitle').textContent = id ? 'Edit member' : 'Add member';
+  fields.forEach(function(f){ $('f'+f).value = m[f.toLowerCase()] || ''; });
+  $('overlay').classList.add('show');
+  setTimeout(function(){$('fName').focus();},50);
+}
+function closeModal(){ $('overlay').classList.remove('show'); }
+
+$('addMember').addEventListener('click', function(){openModal(null);});
+$('mCancel').addEventListener('click', closeModal);
+$('overlay').addEventListener('click', function(e){ if(e.target === $('overlay')) closeModal(); });
+document.addEventListener('keydown', function(e){ if(e.key === 'Escape') closeModal(); });
+
+$('mSave').addEventListener('click', function(){
+  var data = {};
+  fields.forEach(function(f){ data[f.toLowerCase()] = $('f'+f).value.trim(); });
+  if(!data.name){ toast('Please enter a name'); $('fName').focus(); return; }
+  var btn = $('mSave'); btn.disabled = true;
+  var req = editId ? dbReq('PUT', '/Team/' + editId, data) : dbReq('POST', '/Team', data);
+  req.then(function(res){
+      var id = editId || (res && res.name);
+      if(id) team[id] = data;
+      lastTeamJson = JSON.stringify(team);
+      renderTeam(); closeModal();
+      toast(editId ? 'Member updated' : 'Member added');
+    })
+    .catch(function(){ toast('Could not save. Check internet.'); })
+    .then(function(){ btn.disabled = false; });
+});
+
+function deleteMember(id){
+  var m = team[id] || {};
+  if(!confirm('Delete ' + (m.name || 'this member') + '?')) return;
+  dbReq('DELETE', '/Team/' + id)
+    .then(function(){ delete team[id]; lastTeamJson = JSON.stringify(team); renderTeam(); toast('Member deleted'); })
+    .catch(function(){ toast('Could not delete. Check internet.'); });
+}
+
+/* ---------- live data, log, alerts ---------- */
+var HIST_MAX = 40, LOG_MAX = 50;
+var cardMap = {}, hist = {}, logRows = [], logKeys = [], watchPath = 'SensorData', lastFlatJson = '';
+var UNITS = [[/batt.*(per|pct|level)|soc/i,'%'],[/temp/i,'°C'],[/hum/i,'%'],[/volt|vbat/i,'V'],[/curr|amp/i,'A'],[/speed|velocity/i,'km/h'],[/dist|ultra|range/i,'cm'],[/press/i,'hPa'],[/dust|pm2|pm10/i,'µg/m³'],[/alt/i,'m'],[/soil|moist|water|level|mq/i,'%'],[/rssi/i,'dBm'],[/heading|yaw|angle/i,'°']];
+
+function isCtl(k){ return k.toLowerCase().indexOf('control') === 0; }
+function flatten(o, p, out){
+  if(o === null || o === undefined) return out;
+  if(typeof o === 'object'){ Object.keys(o).forEach(function(k){ flatten(o[k], p ? p + '.' + k : k, out); }); }
+  else { out[p] = o; }
+  return out;
+}
+function unitFor(k){ for(var i = 0; i < UNITS.length; i++){ if(UNITS[i][0].test(k)) return UNITS[i][1]; } return ''; }
+function fmt(n){ return Math.abs(n) >= 1000 ? n.toFixed(0) : (Number.isInteger(n) ? String(n) : n.toFixed(2)); }
+function getPath(d, p){
+  var parts = p.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean), o = d;
+  for(var i = 0; i < parts.length; i++){ if(o === null || typeof o !== 'object') return null; o = o[parts[i]]; }
+  return o === undefined ? null : o;
+}
+function drawSpark(cv, a){
+  var w = cv.width, h = cv.height, c = cv.getContext('2d');
+  c.clearRect(0, 0, w, h);
+  if(a.length < 2) return;
+  var mn = Math.min.apply(null, a), mx = Math.max.apply(null, a), sp = (mx - mn) || 1;
+  c.beginPath();
+  a.forEach(function(v, i){ var x = i / (a.length - 1) * w, y = h - 4 - (v - mn) / sp * (h - 8); if(i) c.lineTo(x, y); else c.moveTo(x, y); });
+  c.strokeStyle = '#2e9e6b'; c.lineWidth = 3; c.stroke();
+}
+function makeCard(key){
+  var el = document.createElement('div');
+  el.className = 'card lcard';
+  el.innerHTML = '<div class="k"></div><div class="v"></div><div class="bar" hidden><span></span></div><canvas width="300" height="68"></canvas><div class="mm"></div>';
+  el.querySelector('.k').textContent = key;
+  $('lcards').appendChild(el);
+  return {v: el.querySelector('.v'), mm: el.querySelector('.mm'), cv: el.querySelector('canvas'), bar: el.querySelector('.bar'), fill: el.querySelector('.bar span')};
+}
+function updateLive(flat){
+  var keys = Object.keys(flat).filter(function(k){ return !isCtl(k); });
+  var em = $('lcards').querySelector('.empty'); if(em && keys.length) em.remove();
+  keys.forEach(function(k){
+    var v = flat[k]; if(!cardMap[k]){ cardMap[k] = makeCard(k); hist[k] = []; }
+    var c = cardMap[k];
+    if(typeof v === 'boolean'){ c.v.className = 'v ' + (v ? 'on' : 'off'); c.v.textContent = v ? 'ON' : 'OFF'; c.cv.style.display = 'none'; c.mm.textContent = ''; }
+    else if(typeof v === 'number'){
+      var u = unitFor(k), h = hist[k];
+      c.v.className = 'v'; c.v.innerHTML = fmt(v) + (u ? '<small>' + u + '</small>' : '');
+      h.push(v); if(h.length > HIST_MAX) h.shift();
+      drawSpark(c.cv, h);
+      c.mm.textContent = 'min ' + fmt(Math.min.apply(null, h)) + '  max ' + fmt(Math.max.apply(null, h));
+      if(u === '%' && v >= 0 && v <= 100){ c.bar.hidden = false; c.fill.style.width = v + '%'; c.fill.style.background = v < 20 ? 'var(--red)' : 'var(--leaf)'; }
+    } else { c.v.className = 'v'; c.v.style.fontSize = '18px'; c.v.textContent = String(v); c.cv.style.display = 'none'; c.mm.textContent = ''; }
+  });
+}
+function addLog(flat){
+  var row = {time: new Date().toLocaleTimeString()};
+  Object.keys(flat).forEach(function(k){ if(isCtl(k)) return; row[k] = flat[k]; if(logKeys.indexOf(k) < 0) logKeys.push(k); });
+  logRows.unshift(row); if(logRows.length > LOG_MAX) logRows.pop();
+  renderLog();
+}
+function renderLog(){
+  $('logHead').innerHTML = '<tr><th>time</th>' + logKeys.map(function(k){ return '<th>' + esc(k) + '</th>'; }).join('') + '</tr>';
+  $('logBody').innerHTML = logRows.map(function(r){
+    return '<tr><td>' + esc(r.time) + '</td>' + logKeys.map(function(k){ return '<td>' + (r[k] === undefined ? '' : esc(r[k])) + '</td>'; }).join('') + '</tr>';
+  }).join('');
+}
+$('csvBtn').addEventListener('click', function(){
+  var csv = 'time,' + logKeys.join(',') + '\n';
+  for(var r = logRows.length - 1; r >= 0; r--){
+    var cells = [logRows[r].time];
+    logKeys.forEach(function(k){ var v = logRows[r][k]; cells.push(v === undefined ? '' : '"' + String(v).replace(/"/g, '""') + '"'); });
+    csv += cells.join(',') + '\n';
+  }
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], {type: 'text/csv'}));
+  a.download = 'sensor-log-' + Date.now() + '.csv';
+  a.click();
+});
+$('clrBtn').addEventListener('click', function(){ logRows = []; renderLog(); toast('Log cleared'); });
+$('pathBtn').addEventListener('click', function(){
+  watchPath = $('pathIn').value || '/';
+  cardMap = {}; hist = {}; logRows = []; logKeys = []; lastFlatJson = '';
+  $('lcards').innerHTML = '<div class="empty">Waiting for data from Firebase…</div>';
+  renderLog(); poll();
+});
+renderLog();
+
+function checkAlerts(flat){
+  var list = [];
+  Object.keys(flat).forEach(function(k){
+    var v = flat[k];
+    if(/batt/i.test(k) && typeof v === 'number' && v <= 20 && v > 0) list.push('Low battery: ' + k + ' is ' + fmt(v) + '%');
+    if(/flame|fire|smoke|gas/i.test(k) && (v === true || v === 1 || v === 'detected' || v === '1')) list.push('Hazard detected: ' + k);
+    if(/temp/i.test(k) && typeof v === 'number' && v > 50) list.push('High temperature: ' + k + ' is ' + fmt(v) + ' °C');
+    if(/dist|ultra/i.test(k) && typeof v === 'number' && v > 0 && v < 15) list.push('Obstacle close: ' + k + ' is ' + fmt(v) + ' cm');
+  });
+  $('alerts').innerHTML = list.map(function(t){ return '<div class="alert"><i class="fa-solid fa-triangle-exclamation"></i>' + esc(t) + '</div>'; }).join('');
+}
+
+/* ---------- map (you = blue, rover = amber) ---------- */
+var map = null, marker = null, trail = null, trailPts = [], myMarker = null, myPos = null, placeDone = false;
+function initMap(){
+  if(typeof L === 'undefined') return;
+  map = L.map('map', {minZoom: 6, maxBounds: [[20.3, 87.6], [26.9, 93.0]], maxBoundsViscosity: 1}).setView([23.685, 90.356], 7);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19, attribution: '&copy; OpenStreetMap'}).addTo(map);
+}
+function updateMap(flat){
+  var lat = null, lng = null;
+  Object.keys(flat).forEach(function(k){
+    if(/(^|\.)lat(itude)?$/i.test(k)) lat = Number(flat[k]);
+    if(/(^|\.)(lon|lng|long|longitude)$/i.test(k)) lng = Number(flat[k]);
+  });
+  if(!map || lat === null || lng === null || isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0)) return;
+  var pt = [lat, lng];
+  if(!marker){
+    marker = L.circleMarker(pt, {radius: 9, color: '#e8962a', fillColor: '#e8962a', fillOpacity: .9}).addTo(map);
+    trail = L.polyline([], {color: '#2e9e6b', weight: 3}).addTo(map);
+  }
+  var last = trailPts[trailPts.length - 1];
+  if(!last || last[0] !== lat || last[1] !== lng){ trailPts.push(pt); if(trailPts.length > 300) trailPts.shift(); trail.setLatLngs(trailPts); }
+  marker.setLatLng(pt);
+}
+function onTab(tab){ if(tab === 'dash' && map) setTimeout(function(){ map.invalidateSize(); }, 60); }
+initMap();
+
+/* ---------- clock, location, weather ---------- */
+function tickClock(){
+  var n = new Date();
+  $('clock').textContent = n.toLocaleTimeString();
+  $('dateTxt').textContent = n.toLocaleDateString(undefined, {weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'});
+}
+tickClock(); setInterval(tickClock, 1000);
+
+var WCODE = {0:'Clear sky',1:'Mainly clear',2:'Partly cloudy',3:'Overcast',45:'Fog',48:'Fog',51:'Light drizzle',53:'Drizzle',55:'Heavy drizzle',61:'Light rain',63:'Rain',65:'Heavy rain',80:'Rain showers',81:'Rain showers',82:'Violent showers',95:'Thunderstorm',96:'Thunderstorm',99:'Thunderstorm'};
+function fetchWeather(){
+  if(!myPos) return;
+  fetch('https://api.open-meteo.com/v1/forecast?latitude=' + myPos.lat + '&longitude=' + myPos.lng + '&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m&timezone=auto')
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      var c = d.current;
+      $('wTemp').textContent = Math.round(c.temperature_2m) + ' °C';
+      $('wDesc').textContent = WCODE[c.weather_code] || ('Weather code ' + c.weather_code);
+      $('wMore').textContent = 'Feels ' + Math.round(c.apparent_temperature) + ' °C, humidity ' + c.relative_humidity_2m + '%, wind ' + c.wind_speed_10m + ' km/h';
+    })
+    .catch(function(){ $('wDesc').textContent = 'Weather unavailable (check internet)'; });
+}
+function fetchPlace(){
+  if(!myPos || placeDone) return;
+  placeDone = true;
+  fetch('https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=' + myPos.lat + '&longitude=' + myPos.lng + '&localityLanguage=en')
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      var parts = [];
+      if(d.locality) parts.push(d.locality);
+      if(d.city && d.city !== d.locality) parts.push(d.city);
+      if(d.countryName) parts.push(d.countryName);
+      if(parts.length) $('placeTxt').textContent = parts.join(', ');
+    })
+    .catch(function(){});
+}
+function setMyPosition(lat, lng, label){
+  var first = (myPos === null);
+  myPos = {lat: lat, lng: lng};
+  $('coordTxt').textContent = lat.toFixed(5) + ', ' + lng.toFixed(5) + (label ? ' (' + label + ')' : '');
+  if(map){
+    if(!myMarker) myMarker = L.circleMarker([lat, lng], {radius: 8, color: '#4da3ff', fillColor: '#4da3ff', fillOpacity: .9}).addTo(map);
+    myMarker.setLatLng([lat, lng]);
+  }
+  if(first){ fetchWeather(); fetchPlace(); }
+}
+function useDefaultPlace(label){ $('placeTxt').textContent = 'Dhaka, Bangladesh'; setMyPosition(23.8103, 90.4125, label); }
+if(navigator.geolocation){
+  navigator.geolocation.watchPosition(function(p){ setMyPosition(p.coords.latitude, p.coords.longitude, ''); },
+    function(){ useDefaultPlace('default, location blocked'); }, {enableHighAccuracy: true, maximumAge: 10000, timeout: 20000});
+} else { useDefaultPlace('default'); }
+setInterval(fetchWeather, 600000);
+
+/* ---------- rover drive control (writes to /control) ---------- */
+var speed = 150, autoOn = false, lightOn = false, rLock = 0;
+function send(f){ f.ts = Date.now(); dbReq('PATCH', '/control', f).catch(function(){ toast('Write failed. Check internet.'); }); }
+function drawToggle(w){
+  var on = (w === 'auto') ? autoOn : lightOn, b = $(w + 'Btn');
+  b.classList.toggle('active', on);
+  b.querySelector('span').textContent = (w === 'auto' ? 'Auto mode: ' : 'Light: ') + (on ? 'on' : 'off');
+}
+function syncRover(c){
+  if(Date.now() < rLock) return;
+  if(typeof c.auto === 'boolean'){ autoOn = c.auto; drawToggle('auto'); }
+  if(typeof c.light === 'boolean'){ lightOn = c.light; drawToggle('light'); }
+}
+document.querySelectorAll('.pad button').forEach(function(b){
+  var cmd = b.getAttribute('data-cmd');
+  b.addEventListener('pointerdown', function(){ send({cmd: cmd, speed: speed}); });
+  if(cmd !== 'stop'){
+    b.addEventListener('pointerup', function(){ send({cmd: 'stop', speed: speed}); });
+    b.addEventListener('pointerleave', function(e){ if(e.buttons) send({cmd: 'stop', speed: speed}); });
+  }
+});
+$('spd').addEventListener('input', function(){ speed = Number($('spd').value); $('spdVal').textContent = speed; });
+$('spd').addEventListener('change', function(){ send({speed: speed}); });
+$('autoBtn').addEventListener('click', function(){ autoOn = !autoOn; rLock = Date.now() + 3000; drawToggle('auto'); send({auto: autoOn}); });
+$('lightBtn').addEventListener('click', function(){ lightOn = !lightOn; rLock = Date.now() + 3000; drawToggle('light'); send({light: lightOn}); });
+
+var KEYMAP = {ArrowUp:'forward', w:'forward', ArrowDown:'backward', s:'backward', ArrowLeft:'left', a:'left', ArrowRight:'right', d:'right', ' ':'stop'};
+var held = null;
+function roverActive(){ return $('tab-control').classList.contains('active') && !$('overlay').classList.contains('show'); }
+function keyName(e){ return e.key.length === 1 ? e.key.toLowerCase() : e.key; }
+document.addEventListener('keydown', function(e){
+  if(!roverActive() || e.target.tagName === 'INPUT') return;
+  var key = keyName(e), cmd = KEYMAP[key];
+  if(!cmd || held === key) return;
+  held = key; send({cmd: cmd, speed: speed}); e.preventDefault();
+});
+document.addEventListener('keyup', function(e){
+  var key = keyName(e);
+  if(held === key){ held = null; if(KEYMAP[key] !== 'stop') send({cmd: 'stop', speed: speed}); }
+});
+
+/* ---------- called on every poll ---------- */
+function onData(d){
+  var flat = flatten(d.SensorData || {}, '', {});
+  checkAlerts(flat); updateMap(flat);
+  syncRover(d.control || {});
+  var w = getPath(d, watchPath);
+  if(w === null) return;
+  var wf = (typeof w === 'object') ? flatten(w, '', {}) : {value: w};
+  var j = JSON.stringify(wf);
+  if(j === lastFlatJson) return;
+  lastFlatJson = j; updateLive(wf); addLog(wf);
+}
+
+/* ---------- realtime listener (Firebase SDK) ---------- */
+var lastData = null;
+function handle(d){
+      d = d || {};
+      var s = d.SensorData || {};
+      setIR(1, s.IR1); setIR(2, s.IR2); setIR(3, s.IR3);
+      setGauge('soil', s.SoilMoisture !== undefined ? s.SoilMoisture : s.Soil, ['Dry','Moist','Wet']);
+      setGauge('water', s.WaterLevel !== undefined ? s.WaterLevel : s.Water, ['Low','Medium','Full']);
+      renderSensors(s);
+      onData(d);
+
+      var c = d.Control || {};
+      [1,2].forEach(function(n){
+        var v = c['Servo'+n];
+        if(v !== undefined && Date.now() > servo[n].lock){
+          var nv = Number(v) === 1 ? 1 : 0;
+          if(nv !== servo[n].val){ servo[n].val = nv; }
+          drawServo(n);
+        }
+      });
+
+      var t = d.Team || {};
+      var tj = JSON.stringify(t);
+      if(tj !== lastTeamJson){ team = t; lastTeamJson = tj; renderTeam(); }
+
+      $('lastUpdate').textContent = 'Last update: ' + new Date().toLocaleTimeString();
+}
+function poll(){ if(lastData) handle(lastData); }
+onValue(ref(db), function(snap){ lastData = snap.val() || {}; handle(lastData); }, function(err){
+  setStatus(false);
+  $('lastUpdate').textContent = /permission/i.test(String(err.message)) ? 'Access denied. Set .read and .write to true in Firebase rules.' : 'Error: ' + err.message;
+});
+onValue(ref(db, '.info/connected'), function(snap){ setStatus(snap.val() === true); });
+renderTeam();
+
+})();
+</script>
+</body>
+</html>
