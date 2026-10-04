@@ -20,11 +20,11 @@
 
 //============== FIREBASE ==============
 
-#define Web_API_KEY "AIzaSyBkXpnUZzk2YIrAhNdha9ahYeOSlpPn6k8"
+#define Web_API_KEY "************************************8"
 
-#define DATABASE_URL "https://test1-99d84-default-rtdb.asia-southeast1.firebasedatabase.app/"
+#define DATABASE_URL "https://testp/"
 
-#define USER_EMAIL "robot123@gmail.com"
+#define USER_EMAIL "robail.com"
 #define USER_PASS  "123456"
 
 
