@@ -1,0 +1,221 @@
+#define ENABLE_USER_AUTH
+#define ENABLE_DATABASE
+
+#include <Arduino.h>
+#include <WiFi.h>
+#include <WiFiClientSecure.h>
+#include <FirebaseClient.h>
+#include <ESP32Servo.h>
+
+//============== WIFI ==================
+#define WIFI_SSID     "AI"
+#define WIFI_PASSWORD "12345678"
+
+//============== FIREBASE ==============
+#define Web_API_KEY   "AIzaSyBkXpnUZzk2YIrAhNdha9ahYeOSlpPn6k8"
+#define DATABASE_URL  "https://test1-99d84-default-rtdb.asia-southeast1.firebasedatabase.app/"
+#define USER_EMAIL    "robot123@gmail.com"
+#define USER_PASS     "123456"
+
+//============== SENSOR PINS ===========
+#define IR1_PIN    2
+#define IR2_PIN    3
+#define IR3_PIN    13
+
+#define SOIL_PIN   32     // analog (ADC1)
+#define WATER_PIN  34     // analog (ADC1)
+
+//============== SERVO PINS ============
+#define SERVO1_PIN 16
+#define SERVO2_PIN 17
+
+Servo servo1;
+Servo servo2;
+
+// Servo positions (S1: 0-180 deg, S2: 0-360 deg)
+int s1_current = 0;
+int s1_target  = 0;
+int s2_current = 0;
+int s2_target  = 0;
+
+//============== FIREBASE OBJECTS ======
+UserAuth user_auth(Web_API_KEY, USER_EMAIL, USER_PASS);
+
+WiFiClientSecure ssl_client;
+FirebaseApp app;
+using AsyncClient = AsyncClientClass;
+AsyncClient aClient(ssl_client);
+RealtimeDatabase Database;
+
+bool controlInitDone = false;
+
+//============== WIFI ==================
+void connectWiFi()
+{
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+  Serial.print("Connecting WiFi");
+  while (WiFi.status() != WL_CONNECTED)
+  {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println();
+  Serial.println("WiFi Connected");
+  Serial.println(WiFi.localIP());
+}
+
+//============== SERVO HELPERS =========
+// S1: 0..180 deg  -> 500..2500 us
+void writeServo1(int deg)
+{
+  deg = constrain(deg, 0, 180);
+  servo1.writeMicroseconds(map(deg, 0, 180, 500, 2500));
+}
+
+// S2: 0..360 deg  -> 500..2500 us (360-degree servo)
+void writeServo2(int deg)
+{
+  deg = constrain(deg, 0, 360);
+  servo2.writeMicroseconds(map(deg, 0, 360, 500, 2500));
+}
+
+// Smooth non-blocking movement (called every loop)
+void updateServos()
+{
+  static unsigned long t1 = 0;
+  static unsigned long t2 = 0;
+
+  if (millis() - t1 >= 10)
+  {
+    t1 = millis();
+    if (s1_current < s1_target)      { s1_current++; writeServo1(s1_current); }
+    else if (s1_current > s1_target) { s1_current--; writeServo1(s1_current); }
+  }
+
+  if (millis() - t2 >= 6)
+  {
+    t2 = millis();
+    if (s2_current < s2_target)      { s2_current++; writeServo2(s2_current); }
+    else if (s2_current > s2_target) { s2_current--; writeServo2(s2_current); }
+  }
+}
+
+//============== READ BUTTONS ==========
+void readControl()
+{
+  int b1 = Database.get<int>(aClient, "/Control/Servo1");
+  if (aClient.lastError().code() == 0)
+  {
+    // 1 -> 0 to 180 deg, 0 -> 180 to 0 deg
+    s1_target = (b1 == 1) ? 180 : 0;
+  }
+
+  int b2 = Database.get<int>(aClient, "/Control/Servo2");
+  if (aClient.lastError().code() == 0)
+  {
+    // 1 -> 0 to 360 deg, 0 -> 360 to 0 deg
+    s2_target = (b2 == 1) ? 360 : 0;
+  }
+}
+
+//============== UPLOAD SENSORS ========
+void uploadData()
+{
+  // IR sensors (1 = object detected, 0 = nothing)
+  int ir1 = !digitalRead(IR1_PIN);
+  int ir2 = !digitalRead(IR2_PIN);
+  int ir3 = !digitalRead(IR3_PIN);
+
+  // Soil moisture (dry = 0%, wet = 100%)
+  int soilRaw = analogRead(SOIL_PIN);
+  int soil = constrain(map(soilRaw, 4095, 0, 0, 100), 0, 100);
+
+  // Water level (0-100%)
+  int waterRaw = analogRead(WATER_PIN);
+  int water = constrain(map(waterRaw, 0, 4095, 0, 100), 0, 100);
+
+  Serial.println("======================");
+  Serial.print("IR1   : "); Serial.println(ir1);
+  Serial.print("IR2   : "); Serial.println(ir2);
+  Serial.print("IR3   : "); Serial.println(ir3);
+  Serial.print("Soil  : "); Serial.println(soil);
+  Serial.print("Water : "); Serial.println(water);
+  Serial.print("Servo1 target: "); Serial.println(s1_target);
+  Serial.print("Servo2 target: "); Serial.println(s2_target);
+
+  Database.set<int>(aClient, "/SensorData/IR1",   ir1);
+  Database.set<int>(aClient, "/SensorData/IR2",   ir2);
+  Database.set<int>(aClient, "/SensorData/IR3",   ir3);
+  Database.set<int>(aClient, "/SensorData/Soil",  soil);
+  Database.set<int>(aClient, "/SensorData/Water", water);
+
+  Serial.println("Firebase Updated");
+}
+
+//============== SETUP =================
+void setup()
+{
+  Serial.begin(115200);
+
+  pinMode(IR1_PIN, INPUT);
+  pinMode(IR2_PIN, INPUT);
+  pinMode(IR3_PIN, INPUT);
+
+  pinMode(SOIL_PIN, INPUT);
+  pinMode(WATER_PIN, INPUT);
+
+  ESP32PWM::allocateTimer(0);
+  ESP32PWM::allocateTimer(1);
+  servo1.setPeriodHertz(50);
+  servo2.setPeriodHertz(50);
+  servo1.attach(SERVO1_PIN, 500, 2500);
+  servo2.attach(SERVO2_PIN, 500, 2500);
+  writeServo1(0);
+  writeServo2(0);
+
+  connectWiFi();
+
+  ssl_client.setInsecure();
+
+  initializeApp(aClient, app, getAuth(user_auth));
+  app.getApp<RealtimeDatabase>(Database);
+  Database.url(DATABASE_URL);
+
+  Serial.println("Firebase Ready");
+}
+
+//============== LOOP ==================
+void loop()
+{
+  app.loop();
+  updateServos();
+
+  if (!app.ready()) return;
+
+  // Auto-create the buttons in Firebase (only once)
+  if (!controlInitDone)
+  {
+    Database.set<int>(aClient, "/Control/Servo1", 0);
+    Database.set<int>(aClient, "/Control/Servo2", 0);
+    controlInitDone = true;
+    Serial.println("Control buttons created");
+  }
+
+  // Read buttons every 1 second
+  static unsigned long ctrlTimer = 0;
+  if (millis() - ctrlTimer > 1000)
+  {
+    ctrlTimer = millis();
+    readControl();
+  }
+
+  // Upload sensors every 4 seconds
+  static unsigned long sensorTimer = 0;
+  if (millis() - sensorTimer > 4000)
+  {
+    sensorTimer = millis();
+    uploadData();
+  }
+}
