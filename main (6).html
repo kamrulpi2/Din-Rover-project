@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rover Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+:root{
+  --bg:#0f2429; --panel:#163239; --panel2:#1c3f47; --line:#2a5560;
+  --text:#e8f1ee; --dim:#8fb0ab; --gold:#f2c14e; --ok:#7fd1ae; --bad:#ff6b57;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:"Bricolage Grotesque",system-ui,sans-serif;font-variant-numeric:tabular-nums;min-height:100vh}
+header{display:flex;flex-wrap:wrap;gap:14px;align-items:center;justify-content:space-between;padding:16px 24px;border-bottom:1px solid var(--line)}
+h1{font-size:26px;font-weight:800;letter-spacing:-.5px}
+.status{display:flex;align-items:center;gap:10px;font-size:14px;color:var(--dim)}
+.dot{width:12px;height:12px;border-radius:50%;background:var(--bad)}
+.dot.live{background:var(--ok);animation:pulse 1.6s infinite}
+.dot.stale{background:var(--gold)}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(127,209,174,.7)}100%{box-shadow:0 0 0 12px rgba(127,209,174,0)}}
+.pathbox{display:flex;gap:6px}
+input,button{font:inherit;color:var(--text)}
+input[type=text],input[type=email],input[type=password]{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 10px;width:150px}
+button{background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:7px 14px;cursor:pointer}
+button:hover{border-color:var(--gold)}
+button:focus-visible,input:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+main{display:grid;grid-template-columns:1fr 380px;gap:20px;padding:20px 24px}
+@media(max-width:980px){main{grid-template-columns:1fr}}
+h2{font-size:15px;font-weight:600;color:var(--dim);margin-bottom:10px}
+#alerts{display:flex;flex-direction:column;gap:6px;margin-bottom:16px}
+.alert{background:rgba(255,107,87,.15);border-left:4px solid var(--bad);padding:8px 12px;border-radius:4px;font-size:14px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.card .k{font-size:13px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.card .v{font-size:32px;font-weight:800;color:var(--gold);margin:2px 0}
+.card .v small{font-size:14px;font-weight:400;color:var(--dim);margin-left:4px}
+.card .v.on{color:var(--ok)} .card .v.off{color:var(--bad)} .card .v.txt{font-size:20px;color:var(--text)}
+.card canvas{width:100%;height:34px;display:block}
+.card .mm{font-size:11px;color:var(--dim)}
+.bar{height:6px;background:var(--bg);border-radius:3px;margin:4px 0}
+.bar i{display:block;height:100%;background:var(--ok);border-radius:3px;transition:width .4s}
+.side>section{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:16px}
+#map{height:380px;border-radius:8px;background:var(--bg)}
+.nomap{color:var(--dim);font-size:13px;padding:6px 0}
+.pad{display:grid;grid-template-columns:repeat(3,64px);gap:8px;justify-content:center;margin:8px 0 14px}
+.pad button{height:56px;font-size:22px}
+.pad .stop{background:var(--bad);border-color:var(--bad);color:#fff}
+.row{display:flex;align-items:center;gap:10px;margin:8px 0;font-size:14px}
+.row input[type=range]{flex:1;accent-color:#f2c14e}
+.toggles{display:flex;gap:8px;margin-top:6px}
+.toggles button.active{background:var(--gold);color:#10252b;border-color:var(--gold)}
+.logbox{margin:0 24px 30px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px}
+.logtop{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.tw{max-height:240px;overflow:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:5px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+th{position:sticky;top:0;background:var(--panel2);color:var(--dim);font-weight:600}
+.empty{color:var(--dim);padding:30px;text-align:center;grid-column:1/-1}
+.info{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;padding:16px 24px 0}
+.info>div{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 16px}
+.info .lbl{font-size:13px;color:var(--dim)}
+.info .big{font-size:34px;font-weight:800;color:var(--gold);line-height:1.1;margin-top:2px}
+.info .sub{font-size:14px;color:var(--text);margin-top:2px}
+@media(prefers-reduced-motion:reduce){.dot.live{animation:none}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Rover Dashboard</h1>
+  <div class="pathbox">
+    <input type="text" id="pathIn" value="SensorData" aria-label="Database path to watch">
+    <button id="pathBtn">Watch path</button>
+  </div>
+  <div class="status"><span class="dot" id="dot"></span><span id="statusTxt">Connecting...</span></div>
+</header>
+
+<section class="info">
+  <div><div class="lbl">Local time</div><div class="big" id="clock">--:--:--</div><div class="sub" id="dateTxt">--</div></div>
+  <div><div class="lbl">Live location</div><div class="big" id="placeTxt" style="font-size:22px">Locating...</div><div class="sub" id="coordTxt">--</div></div>
+  <div><div class="lbl">Weather</div><div class="big" id="wTemp">--</div><div class="sub" id="wDesc">Waiting for location</div><div class="sub" id="wMore"></div></div>
+</section>
+
+<main>
+  <div>
+    <div id="alerts"></div>
+    <h2>Live parameters</h2>
+    <div class="cards" id="cards"><div class="empty">Waiting for data from Firebase...</div></div>
+  </div>
+
+  <div class="side">
+    <section>
+      <h2>Bangladesh map (blue: you, yellow: rover GPS)</h2>
+      <div id="map"></div>
+      <div class="nomap" id="nomap">Your location shows in blue. The rover appears in yellow when the database has lat and lng values.</div>
+    </section>
+    <section>
+      <h2>Drive control</h2>
+      <div class="pad">
+        <span></span><button data-cmd="forward" aria-label="Forward">&#9650;</button><span></span>
+        <button data-cmd="left" aria-label="Left">&#9664;</button>
+        <button data-cmd="stop" class="stop" aria-label="Stop">&#9632;</button>
+        <button data-cmd="right" aria-label="Right">&#9654;</button>
+        <span></span><button data-cmd="backward" aria-label="Backward">&#9660;</button><span></span>
+      </div>
+      <div class="row"><label for="spd">Speed</label><input type="range" id="spd" min="0" max="255" value="150"><b id="spdVal">150</b></div>
+      <div class="toggles">
+        <button id="autoBtn">Auto mode: off</button>
+        <button id="lightBtn">Light: off</button>
+      </div>
+      <div class="row" style="color:var(--dim);font-size:12px">Hold a button or use arrow keys / WASD. Commands are written to <code>/control</code>.</div>
+    </section>
+  </div>
+</main>
+
+<div class="logbox">
+  <div class="logtop">
+    <h2 style="margin:0">Data log (last 50 updates)</h2>
+    <span><button id="csvBtn">Download CSV</button> <button id="clrBtn">Clear</button></span>
+  </div>
+  <div class="tw"><table><thead id="logHead"></thead><tbody id="logBody"></tbody></table></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getAnalytics, isSupported } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-analytics.js";
+import { getDatabase, ref, onValue, update } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBkXpnUZzk2YIrAhNdha9ahYeOSlpPn6k8",
+  authDomain: "test1-99d84.firebaseapp.com",
+  databaseURL: "https://test1-99d84-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "test1-99d84",
+  storageBucket: "test1-99d84.firebasestorage.app",
+  messagingSenderId: "860338345519",
+  appId: "1:860338345519:web:9dc8580f0fb782b91c18da",
+  measurementId: "G-5HVP83S6YH"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+isSupported().then(function (ok) { if (ok) { getAnalytics(app); } }).catch(function () {});
+
+const CONTROL_PATH = "control";
+const HISTORY_MAX = 40;
+const LOG_MAX = 50;
+const STALE_SECONDS = 10;
+
+const cardsEl = document.getElementById("cards");
+const alertsEl = document.getElementById("alerts");
+const dotEl = document.getElementById("dot");
+const statusTxt = document.getElementById("statusTxt");
+
+let cardMap = {};      // key -> {card, v, mm, canvas, bar, barFill}
+let history = {};      // key -> [numbers]
+let logRows = [];      // array of flat objects
+let logKeys = [];
+let lastUpdate = 0;
+let connected = false;
+let unsubscribe = null;
+
+// ---------- helpers ----------
+function flatten(obj, prefix, out) {
+  if (obj === null || obj === undefined) { return out; }
+  if (typeof obj === "object") {
+    const keys = Object.keys(obj);
+    for (let i = 0; i < keys.length; i++) {
+      const p = prefix ? prefix + "." + keys[i] : keys[i];
+      flatten(obj[keys[i]], p, out);
+    }
+  } else {
+    out[prefix] = obj;
+  }
+  return out;
+}
+
+const UNITS = [
+  [/temp/i, "°C"], [/hum/i, "%"], [/batt.*(per|pct|level)|soc/i, "%"], [/volt|vbat/i, "V"],
+  [/curr|amp/i, "A"], [/speed|vel/i, "km/h"], [/dist|ultra|range/i, "cm"],
+  [/press/i, "hPa"], [/dust|pm2|pm10/i, "µg/m³"], [/alt/i, "m"], [/soil|moist/i, "%"], [/rssi/i, "dBm"], [/heading|yaw|angle/i, "°"]
+];
+function unitFor(key) {
+  for (let i = 0; i < UNITS.length; i++) {
+    if (UNITS[i][0].test(key)) { return UNITS[i][1]; }
+  }
+  return "";
+}
+
+function isBoolLike(v) {
+  return typeof v === "boolean";
+}
+
+function fmt(n) {
+  if (Math.abs(n) >= 1000) { return n.toFixed(0); }
+  if (Number.isInteger(n)) { return String(n); }
+  return n.toFixed(2);
+}
+
+function drawSpark(canvas, arr) {
+  const w = canvas.clientWidth * 2;
+  const h = canvas.clientHeight * 2;
+  canvas.width = w; canvas.height = h;
+  const c = canvas.getContext("2d");
+  c.clearRect(0, 0, w, h);
+  if (arr.length < 2) { return; }
+  let mn = arr[0], mx = arr[0];
+  for (let i = 1; i < arr.length; i++) {
+    if (arr[i] < mn) { mn = arr[i]; }
+    if (arr[i] > mx) { mx = arr[i]; }
+  }
+  const span = (mx - mn) || 1;
+  c.beginPath();
+  for (let i = 0; i < arr.length; i++) {
+    const x = (i / (arr.length - 1)) * w;
+    const y = h - 3 - ((arr[i] - mn) / span) * (h - 6);
+    if (i === 0) { c.moveTo(x, y); } else { c.lineTo(x, y); }
+  }
+  c.strokeStyle = "#f2c14e";
+  c.lineWidth = 3;
+  c.stroke();
+}
+
+// ---------- cards ----------
+function makeCard(key) {
+  const card = document.createElement("div");
+  card.className = "card";
+  card.innerHTML = '<div class="k"></div><div class="v"></div><div class="bar" hidden><i></i></div><canvas></canvas><div class="mm"></div>';
+  card.querySelector(".k").textContent = key;
+  cardsEl.appendChild(card);
+  return {
+    card: card,
+    v: card.querySelector(".v"),
+    mm: card.querySelector(".mm"),
+    canvas: card.querySelector("canvas"),
+    bar: card.querySelector(".bar"),
+    fill: card.querySelector(".bar i")
+  };
+}
+
+function updateCards(flat) {
+  const keys = Object.keys(flat);
+  const empty = cardsEl.querySelector(".empty");
+  if (empty && keys.length > 0) { empty.remove(); }
+
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+    if (key === CONTROL_PATH || key.indexOf(CONTROL_PATH + ".") === 0) { continue; }
+    const val = flat[key];
+    if (!cardMap[key]) { cardMap[key] = makeCard(key); history[key] = []; }
+    const c = cardMap[key];
+
+    if (isBoolLike(val)) {
+      c.v.className = "v " + (val ? "on" : "off");
+      c.v.textContent = val ? "ON" : "OFF";
+      c.canvas.style.display = "none";
+      c.mm.textContent = "";
+    } else if (typeof val === "number") {
+      const unit = unitFor(key);
+      c.v.className = "v";
+      c.v.innerHTML = fmt(val) + (unit ? "<small>" + unit + "</small>" : "");
+      history[key].push(val);
+      if (history[key].length > HISTORY_MAX) { history[key].shift(); }
+      drawSpark(c.canvas, history[key]);
+      let mn = history[key][0], mx = history[key][0];
+      for (let j = 1; j < history[key].length; j++) {
+        if (history[key][j] < mn) { mn = history[key][j]; }
+        if (history[key][j] > mx) { mx = history[key][j]; }
+      }
+      c.mm.textContent = "min " + fmt(mn) + "  max " + fmt(mx);
+      if (unit === "%" && val >= 0 && val <= 100) {
+        c.bar.hidden = false;
+        c.fill.style.width = val + "%";
+        c.fill.style.background = val < 20 ? "var(--bad)" : "var(--ok)";
+      }
+    } else {
+      c.v.className = "v txt";
+      c.v.textContent = String(val);
+      c.canvas.style.display = "none";
+      c.mm.textContent = "";
+    }
+  }
+}
+
+// ---------- alerts ----------
+function checkAlerts(flat) {
+  const list = [];
+  const keys = Object.keys(flat);
+  for (let i = 0; i < keys.length; i++) {
+    const k = keys[i], v = flat[k];
+    if (/batt/i.test(k) && typeof v === "number" && v <= 20 && v > 0 && unitFor(k) === "%") {
+      list.push("Low battery: " + k + " is " + fmt(v) + "%");
+    }
+    if (/flame|fire|smoke|gas/i.test(k) && (v === true || v === 1 || v === "detected" || v === "1")) {
+      list.push("Hazard detected: " + k);
+    }
+    if (/temp/i.test(k) && typeof v === "number" && v > 50) {
+      list.push("High temperature: " + k + " is " + fmt(v) + " °C");
+    }
+    if (/dist|ultra/i.test(k) && typeof v === "number" && v > 0 && v < 15) {
+      list.push("Obstacle close: " + k + " is " + fmt(v) + " cm");
+    }
+  }
+  alertsEl.innerHTML = "";
+  for (let i = 0; i < list.length; i++) {
+    const d = document.createElement("div");
+    d.className = "alert";
+    d.textContent = list[i];
+    alertsEl.appendChild(d);
+  }
+}
+
+// ---------- map ----------
+let map = null, marker = null, trail = null, trailPts = [];
+function initMap() {
+  if (typeof L === "undefined") { return; }
+  map = L.map("map", { minZoom: 6, maxBounds: [[20.3, 87.6], [26.9, 93.0]], maxBoundsViscosity: 1.0 }).setView([23.685, 90.356], 7);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "&copy; OpenStreetMap" }).addTo(map);
+}
+function updateMap(flat) {
+  const keys = Object.keys(flat);
+  let lat = null, lng = null;
+  for (let i = 0; i < keys.length; i++) {
+    if (/(^|\.)lat(itude)?$/i.test(keys[i])) { lat = Number(flat[keys[i]]); }
+    if (/(^|\.)(lon|lng|long|longitude)$/i.test(keys[i])) { lng = Number(flat[keys[i]]); }
+  }
+  if (!map || lat === null || lng === null || isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0)) { return; }
+  document.getElementById("nomap").style.display = "none";
+  const pt = [lat, lng];
+  if (!marker) {
+    marker = L.circleMarker(pt, { radius: 9, color: "#f2c14e", fillColor: "#f2c14e", fillOpacity: .9 }).addTo(map);
+    trail = L.polyline([], { color: "#7fd1ae", weight: 3 }).addTo(map);
+  }
+  marker.setLatLng(pt);
+  trailPts.push(pt);
+  if (trailPts.length > 300) { trailPts.shift(); }
+  trail.setLatLngs(trailPts);
+}
+
+// ---------- log ----------
+function addLog(flat) {
+  const row = { time: new Date().toLocaleTimeString() };
+  const keys = Object.keys(flat);
+  for (let i = 0; i < keys.length; i++) {
+    if (keys[i] === CONTROL_PATH || keys[i].indexOf(CONTROL_PATH + ".") === 0) { continue; }
+    row[keys[i]] = flat[keys[i]];
+    if (logKeys.indexOf(keys[i]) === -1) { logKeys.push(keys[i]); }
+  }
+  logRows.unshift(row);
+  if (logRows.length > LOG_MAX) { logRows.pop(); }
+  renderLog();
+}
+function renderLog() {
+  const head = document.getElementById("logHead");
+  const body = document.getElementById("logBody");
+  let h = "<tr><th>time</th>";
+  for (let i = 0; i < logKeys.length; i++) { h += "<th>" + logKeys[i] + "</th>"; }
+  head.innerHTML = h + "</tr>";
+  let b = "";
+  for (let r = 0; r < logRows.length; r++) {
+    b += "<tr><td>" + logRows[r].time + "</td>";
+    for (let i = 0; i < logKeys.length; i++) {
+      const v = logRows[r][logKeys[i]];
+      b += "<td>" + (v === undefined ? "" : v) + "</td>";
+    }
+    b += "</tr>";
+  }
+  body.innerHTML = b;
+}
+document.getElementById("csvBtn").onclick = function () {
+  let csv = "time," + logKeys.join(",") + "\n";
+  for (let r = logRows.length - 1; r >= 0; r--) {
+    const cells = [logRows[r].time];
+    for (let i = 0; i < logKeys.length; i++) {
+      const v = logRows[r][logKeys[i]];
+      cells.push(v === undefined ? "" : '"' + String(v).replace(/"/g, '""') + '"');
+    }
+    csv += cells.join(",") + "\n";
+  }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+  a.download = "rover-log-" + Date.now() + ".csv";
+  a.click();
+};
+document.getElementById("clrBtn").onclick = function () { logRows = []; renderLog(); };
+
+// ---------- subscribe ----------
+function watch(path) {
+  if (unsubscribe) { unsubscribe(); }
+  cardsEl.innerHTML = '<div class="empty">Waiting for data from Firebase...</div>';
+  cardMap = {}; history = {}; logRows = []; logKeys = []; renderLog();
+  const clean = path.replace(/^\/+/, "");
+  unsubscribe = onValue(ref(db, clean), function (snap) {
+    const data = snap.val();
+    if (data === null) { return; }
+    const flat = (typeof data === "object") ? flatten(data, "", {}) : { value: data };
+    lastUpdate = Date.now();
+    updateCards(flat);
+    checkAlerts(flat);
+    updateMap(flat);
+    addLog(flat);
+    if (data && data[CONTROL_PATH]) { syncControls(data[CONTROL_PATH]); }
+  }, function (err) {
+    dotEl.className = "dot";
+    if (String(err.message).toLowerCase().indexOf("permission") !== -1) {
+      statusTxt.textContent = "Access denied. Set .read and .write to true in Firebase rules.";
+    } else {
+      statusTxt.textContent = "Error: " + err.message;
+    }
+  });
+}
+document.getElementById("pathBtn").onclick = function () { watch(document.getElementById("pathIn").value || "/"); };
+
+onValue(ref(db, ".info/connected"), function (s) { connected = s.val() === true; refreshStatus(); });
+
+function refreshStatus() {
+  const age = lastUpdate ? Math.round((Date.now() - lastUpdate) / 1000) : null;
+  if (!connected) {
+    dotEl.className = "dot"; statusTxt.textContent = "Offline";
+  } else if (age === null) {
+    dotEl.className = "dot stale"; statusTxt.textContent = "Connected, waiting for data";
+  } else if (age > STALE_SECONDS) {
+    dotEl.className = "dot stale"; statusTxt.textContent = "Rover silent for " + age + "s";
+  } else {
+    dotEl.className = "dot live"; statusTxt.textContent = "Live, updated " + age + "s ago";
+  }
+}
+setInterval(refreshStatus, 1000);
+
+// ---------- controls ----------
+let speed = 150, autoOn = false, lightOn = false;
+const spdEl = document.getElementById("spd");
+const autoBtn = document.getElementById("autoBtn");
+const lightBtn = document.getElementById("lightBtn");
+
+function send(fields) {
+  fields.ts = Date.now();
+  update(ref(db, CONTROL_PATH), fields).catch(function (e) { statusTxt.textContent = "Write failed: " + e.message; });
+}
+function syncControls(c) {
+  if (typeof c.auto === "boolean") { autoOn = c.auto; autoBtn.textContent = "Auto mode: " + (autoOn ? "on" : "off"); autoBtn.classList.toggle("active", autoOn); }
+  if (typeof c.light === "boolean") { lightOn = c.light; lightBtn.textContent = "Light: " + (lightOn ? "on" : "off"); lightBtn.classList.toggle("active", lightOn); }
+}
+
+const padBtns = document.querySelectorAll(".pad button");
+for (let i = 0; i < padBtns.length; i++) {
+  const b = padBtns[i];
+  const cmd = b.getAttribute("data-cmd");
+  b.addEventListener("pointerdown", function () { send({ cmd: cmd, speed: speed }); });
+  if (cmd !== "stop") {
+    b.addEventListener("pointerup", function () { send({ cmd: "stop", speed: speed }); });
+    b.addEventListener("pointerleave", function (e) { if (e.buttons) { send({ cmd: "stop", speed: speed }); } });
+  }
+}
+spdEl.oninput = function () { speed = Number(spdEl.value); document.getElementById("spdVal").textContent = speed; };
+spdEl.onchange = function () { send({ speed: speed }); };
+autoBtn.onclick = function () { autoOn = !autoOn; syncControls({ auto: autoOn }); send({ auto: autoOn }); };
+lightBtn.onclick = function () { lightOn = !lightOn; syncControls({ light: lightOn }); send({ light: lightOn }); };
+
+const KEYMAP = { ArrowUp: "forward", w: "forward", ArrowDown: "backward", s: "backward", ArrowLeft: "left", a: "left", ArrowRight: "right", d: "right", " ": "stop" };
+let held = null;
+document.addEventListener("keydown", function (e) {
+  if (e.target.tagName === "INPUT" && e.target.type === "text") { return; }
+  const cmd = KEYMAP[e.key];
+  if (!cmd || held === e.key) { return; }
+  held = e.key;
+  send({ cmd: cmd, speed: speed });
+  e.preventDefault();
+});
+document.addEventListener("keyup", function (e) {
+  if (held === e.key) { held = null; if (KEYMAP[e.key] !== "stop") { send({ cmd: "stop", speed: speed }); } }
+});
+
+// ---------- start ----------
+initMap();
+
+// ---------- live time ----------
+function tickClock() {
+  const now = new Date();
+  document.getElementById("clock").textContent = now.toLocaleTimeString();
+  document.getElementById("dateTxt").textContent = now.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+}
+tickClock();
+setInterval(tickClock, 1000);
+
+// ---------- live location + weather ----------
+const WCODE = {
+  0: "Clear sky", 1: "Mainly clear", 2: "Partly cloudy", 3: "Overcast", 45: "Fog", 48: "Fog",
+  51: "Light drizzle", 53: "Drizzle", 55: "Heavy drizzle", 61: "Light rain", 63: "Rain", 65: "Heavy rain",
+  80: "Rain showers", 81: "Rain showers", 82: "Violent showers", 95: "Thunderstorm", 96: "Thunderstorm", 99: "Thunderstorm"
+};
+let myPos = null;
+let myMarker = null;
+let placeDone = false;
+
+function fetchWeather() {
+  if (!myPos) { return; }
+  const url = "https://api.open-meteo.com/v1/forecast?latitude=" + myPos.lat + "&longitude=" + myPos.lng +
+    "&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m&timezone=auto";
+  fetch(url).then(function (r) { return r.json(); }).then(function (d) {
+    const c = d.current;
+    document.getElementById("wTemp").textContent = Math.round(c.temperature_2m) + " °C";
+    document.getElementById("wDesc").textContent = WCODE[c.weather_code] || ("Weather code " + c.weather_code);
+    document.getElementById("wMore").textContent = "Feels " + Math.round(c.apparent_temperature) + " °C, humidity " + c.relative_humidity_2m + "%, wind " + c.wind_speed_10m + " km/h";
+  }).catch(function () {
+    document.getElementById("wDesc").textContent = "Weather unavailable (check internet)";
+  });
+}
+
+function fetchPlace() {
+  if (!myPos || placeDone) { return; }
+  placeDone = true;
+  const url = "https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=" + myPos.lat + "&longitude=" + myPos.lng + "&localityLanguage=en";
+  fetch(url).then(function (r) { return r.json(); }).then(function (d) {
+    const parts = [];
+    if (d.locality) { parts.push(d.locality); }
+    if (d.city && d.city !== d.locality) { parts.push(d.city); }
+    if (d.countryName) { parts.push(d.countryName); }
+    if (parts.length > 0) { document.getElementById("placeTxt").textContent = parts.join(", "); }
+  }).catch(function () {});
+}
+
+function setMyPosition(lat, lng, label) {
+  const first = (myPos === null);
+  myPos = { lat: lat, lng: lng };
+  document.getElementById("coordTxt").textContent = lat.toFixed(5) + ", " + lng.toFixed(5) + (label ? " (" + label + ")" : "");
+  if (map && typeof L !== "undefined") {
+    if (!myMarker) {
+      myMarker = L.circleMarker([lat, lng], { radius: 8, color: "#4da3ff", fillColor: "#4da3ff", fillOpacity: .9 }).addTo(map);
+    }
+    myMarker.setLatLng([lat, lng]);
+  }
+  if (first) { fetchWeather(); fetchPlace(); }
+}
+
+if (navigator.geolocation) {
+  navigator.geolocation.watchPosition(function (p) {
+    setMyPosition(p.coords.latitude, p.coords.longitude, "");
+  }, function () {
+    document.getElementById("placeTxt").textContent = "Dhaka, Bangladesh";
+    setMyPosition(23.8103, 90.4125, "default, location blocked");
+  }, { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 });
+} else {
+  document.getElementById("placeTxt").textContent = "Dhaka, Bangladesh";
+  setMyPosition(23.8103, 90.4125, "default");
+}
+setInterval(fetchWeather, 600000);
+
+watch("SensorData");
+</script>
+</body>
+</html>
